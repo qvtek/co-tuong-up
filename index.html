@@ -151,10 +151,9 @@ details ul{padding-left:18px;margin:8px 0 0;display:grid;gap:4px;max-width:60ch}
     </svg></div></section>
     <aside class="panel">
       <div class="controls">
-        <div class="field"><label for="mode">Chế độ</label><select id="mode"><option value="ai">Đánh với máy</option><option value="pvp">Hai người</option></select></div>
         <div class="field"><label for="side">Bạn cầm</label><select id="side"><option value="r">Đỏ (đi trước)</option><option value="b">Đen</option></select></div>
         <div class="field"><label for="level">Độ khó</label><select id="level"><option value="1">Dễ</option><option value="2">Vừa</option><option value="3" selected>Khó</option><option value="4">Cao thủ</option></select></div>
-        <div class="field"><label for="reveal">Lật quân</label><select id="reveal"><option value="auto">Tự động (ngẫu nhiên)</option><option value="choose">Tự chọn quân</option></select></div>
+        <div class="field" style="grid-column:1/-1"><label for="reveal">Lật quân</label><select id="reveal"><option value="auto">Tự động (ngẫu nhiên)</option><option value="choose">Tự chọn quân</option></select></div>
         <div class="btns"><button class="primary" id="newBtn">Ván mới</button><button id="undoBtn">Đi lại</button><button id="flipBtn">Xoay bàn</button></div>
       </div>
       <div>
@@ -172,7 +171,7 @@ details ul{padding-left:18px;margin:8px 0 0;display:grid;gap:4px;max-width:60ch}
           <li>Quân úp đi theo quân vốn đứng ở chỗ đó: úp ở chỗ Xe thì đi như Xe, ở chỗ Pháo thì đi như Pháo…</li>
           <li>Đi xong quân lật ra mặt thật và từ đó đi theo mặt thật.</li>
           <li>Sĩ, Tượng đã lật được đi khắp bàn, không bị giới hạn cung hay sông.</li>
-          <li>Ăn quân úp thì quân đó vẫn giữ úp, không bên nào biết là quân gì. Ăn quân đã lật thì mới thấy quân.</li>
+          <li>Ăn quân úp thì bên ăn được xem quân đó là gì, bên bị ăn thì không biết. Máy cũng chỉ biết những quân úp nó ăn của bạn.</li>
           <li>Chế độ Tự chọn quân: đi quân úp thì được chọn nó lật thành quân gì trong số quân mình còn úp. Quân bị ăn khi còn úp thì lật ngẫu nhiên.</li>
           <li>Không được để Tướng bị chiếu, hai Tướng không được đối mặt. Hết nước đi là thua.</li>
           <li>Cấm chiếu mãi: bên nào chiếu liên tục làm thế cờ lặp lại 3 lần thì bị xử thua. Lặp lại 3 lần mà không ai chiếu mãi thì hoà.</li>
@@ -430,14 +429,15 @@ function legal(B,col){const out=[]; for(const m of gen(B,col,false)){const u=mk(
 
 /* ---------- AI ---------- */
 let HV={r:30,b:30};
-function hiddenPool(col){
+function hiddenPool(col,viewer){
+  if(!viewer)viewer=cfg.side;
   const pool=FULL.slice(); const rm=t=>{const k=pool.indexOf(t); if(k>=0)pool.splice(k,1);};
-  G.B.forEach(p=>{if(p&&p.c===col&&!p.hid&&p.t!=='k')rm(p.t);}); G.cap[col].forEach(x=>{x=capOf(x); if(!x.hid)rm(x.t);}); return pool;
+  G.B.forEach(p=>{if(p&&p.c===col&&!p.hid&&p.t!=='k')rm(p.t);}); G.cap[col].forEach(x=>{x=capOf(x); if(!x.hid||viewer!==col)rm(x.t);}); return pool;
 }
 function capOf(x){return typeof x==='string'?{t:x,hid:false}:x;}
 function realPool(col){return G.B.filter(p=>p&&p.c===col&&p.hid).map(p=>p.t);
 }
-function calcHV(){for(const col of['r','b']){const pool=hiddenPool(col); HV[col]=pool.length?pool.reduce((s,t)=>s+VAL[t],0)/pool.length:0;}}
+function calcHV(){for(const col of['r','b']){const pool=hiddenPool(col,G.turn); HV[col]=pool.length?pool.reduce((s,t)=>s+VAL[t],0)/pool.length:0;}}
 function pval(p,i){
   if(p.hid||p.unk)return HV[p.c];
   const r=(i/9)|0;
@@ -511,7 +511,8 @@ function play(m,ty){
     if(ty&&ty!==p.t){const other=G.B.find(x=>x&&x!==p&&x.c===col&&x.hid&&x.t===ty); if(other){other.t=p.t; p.t=ty;}}
   }
   const entry={col,txt:notate(m,col),rev:p.hid?p.t:null,cap:null,chose:p.hid&&cfg.reveal==='choose'};
-  if(q){G.cap[q.c].push({t:q.t,hid:q.hid}); entry.cap=q.hid?'u':q.t;}
+  if(q){G.cap[q.c].push({t:q.t,hid:q.hid}); entry.cap=q.hid?'u':q.t; entry.capT=q.t; entry.capOwner=q.c;
+    if(q.hid&&col===cfg.side)flash(`Bạn ăn được quân úp: ${NAME[q.t]}`);}
   p.hid=false; G.B[t]=p; G.B[f]=null;
   G.log.push(entry); G.last=[f,t]; G.turn=opp(col);
   if(q||entry.rev)G.pos=[];
@@ -554,7 +555,7 @@ function maybeAI(){
   if(cfg.mode!=='ai'||G.over||G.turn===cfg.side)return;
   thinking=true; renderStatus();
   const w=getWorker(); if(!w){fallbackAI();return;}
-  const pool=[0,1].map(si=>{const arr=[0,0,0,0,0,0,0,0]; const sc=si?'b':'r'; ((cfg.reveal==='choose'&&sc===G.turn)?realPool(sc):hiddenPool(sc)).forEach(t=>arr[TI[t]]++); return arr;});
+  const pool=[0,1].map(si=>{const arr=[0,0,0,0,0,0,0,0]; const sc=si?'b':'r'; ((cfg.reveal==='choose'&&sc===G.turn)?realPool(sc):hiddenPool(sc,G.turn)).forEach(t=>arr[TI[t]]++); return arr;});
   const hv=pool.map(a=>{let n=0,s=0; a.forEach((c,t)=>{n+=c;s+=c*BVAL[t];}); return n?s/n:0;});
   const board=encodeBoard(), hist=G.pos.slice(-400).map(e=>({b:e.b,chk:e.chk}));
   const L=LEVELS[cfg.level]||LEVELS[3];
@@ -620,10 +621,11 @@ function renderMarks(){
   if(sel>=0){const[x,y]=sq(sel); el('circle',{cx:x,cy:y,r:30,class:'selr'},gMarks);
     for(const m of selMoves){const t=m&127,[x2,y2]=sq(t); if(G.B[t])el('circle',{cx:x2,cy:y2,r:30,class:'tcap'},gT); else el('circle',{cx:x2,cy:y2,r:7,class:'tdot'},gT);}}
 }
-let overHidden=false;
+let overHidden=false, flashMsg='', flashT=0;
+function flash(msg){flashMsg=msg; clearTimeout(flashT); flashT=setTimeout(()=>{flashMsg=''; renderStatus();},2600);}
 function renderStatus(){
   renderPlayers();
-  const toast=$('toast'); toast.textContent=G.over?'':(G.warn||''); toast.hidden=!toast.textContent;
+  const toast=$('toast'); toast.textContent=G.over?'':(G.warn||flashMsg||''); toast.hidden=!toast.textContent;
   const ov=$('over');
   if(G.over&&!overHidden){const w=G.over.winner;
     $('overTitle').textContent=!w?'Hoà':cfg.mode==='ai'?(w===cfg.side?'Bạn thắng!':'Máy thắng'):`${SIDE[w]} thắng`;
@@ -644,21 +646,21 @@ function renderPlayers(){
     row.innerHTML=`<span class="pdot"></span><span class="pname">${name}</span>`+(st?`<span class="pstate ${cls}">${st}</span>`:'');
     const caps=document.createElement('span'); caps.className='pcaps'; caps.title=`Quân ${SIDE[col]} bị ăn`;
     if(!G.cap[col].length)caps.innerHTML='<span class="none">chưa mất quân</span>';
-    G.cap[col].forEach(x=>{x=capOf(x); caps.appendChild(x.hid?hidChip(col):chip(col,x.t));});
+    G.cap[col].forEach(x=>{x=capOf(x); const c2=(x.hid&&col===cfg.side)?hidChip(col):chip(col,x.t); if(x.hid&&col!==cfg.side)c2.title=NAME[x.t]+' (ăn khi còn úp)'; caps.appendChild(c2);});
     row.appendChild(caps); box.appendChild(row);
   }
 }
 function hidChip(col){const s=document.createElement('span'); s.className='chip hid '+col; s.title='Quân úp'; s.textContent='?'; return s;}
 function chip(col,t){const s=document.createElement('span'); s.className='chip '+col+(label==='vn'?' vn':''); s.textContent=label==='han'?HAN[col][t]:SHORT[t]; s.title=NAME[t]; return s;}
 function renderSide(){
-  const desc=col=>{const pool=hiddenPool(col),hidden=G.B.filter(p=>p&&p.c===col&&p.hid).length,capH=G.cap[col].filter(x=>capOf(x).hid).length;
+  const desc=col=>{const pool=hiddenPool(col),hidden=G.B.filter(p=>p&&p.c===col&&p.hid).length,capH=col===cfg.side?G.cap[col].filter(x=>capOf(x).hid).length:0;
     if(!pool.length)return `${SIDE[col]}: hết quân úp`;
     const cnt={}; pool.forEach(t=>cnt[t]=(cnt[t]||0)+1);
     return `${SIDE[col]} còn ${hidden} quân úp trên bàn`+(capH?`, ${capH} quân bị ăn úp`:'')+`. Chưa lộ: `+['r','c','h','e','a','p'].filter(t=>cnt[t]).map(t=>`${cnt[t]} ${NAME[t]}`).join(', ');};
   document.getElementById('pool').innerHTML=desc('r')+'<br>'+desc('b');
   const tb=document.getElementById('log'); tb.innerHTML='';
   if(!G.log.length){tb.innerHTML='<tr><td class="empty">Chưa có nước nào.</td></tr>';return;}
-  const cell=e=>{if(!e)return '<td></td>'; let x=`<span class="mv">${e.txt}</span>`; const extra=[]; if(e.rev)extra.push((e.chose?'chọn ':'lật ra ')+NAME[e.rev]); if(e.cap)extra.push(e.cap==='u'?'ăn quân úp':'ăn '+NAME[e.cap]); if(extra.length)x+=`<span class="rv">${extra.join(' · ')}</span>`; return `<td>${x}</td>`;};
+  const cell=e=>{if(!e)return '<td></td>'; let x=`<span class="mv">${e.txt}</span>`; const extra=[]; if(e.rev)extra.push((e.chose?'chọn ':'lật ra ')+NAME[e.rev]); if(e.cap)extra.push(e.cap==='u'?(e.capOwner&&e.capOwner!==cfg.side?`ăn quân úp: ${NAME[e.capT]}`:'ăn quân úp'):'ăn '+NAME[e.cap]); if(extra.length)x+=`<span class="rv">${extra.join(' · ')}</span>`; return `<td>${x}</td>`;};
   for(let i=0;i<G.log.length;i+=2)tb.insertAdjacentHTML('beforeend',`<tr><td class="n">${i/2+1}.</td>${cell(G.log[i])}${cell(G.log[i+1])}</tr>`);
   const box=tb.closest('.logBox'); box.scrollTop=box.scrollHeight;
 }
@@ -694,7 +696,6 @@ function onSquare(r,c){
   renderMarks();
 }
 const $=id=>document.getElementById(id);
-$('mode').onchange=e=>{cfg.mode=e.target.value; $('side').disabled=$('level').disabled=cfg.mode!=='ai'; newGame();};
 $('side').onchange=e=>{cfg.side=e.target.value; newGame();};
 $('level').onchange=e=>{cfg.level=+e.target.value;};
 $('reveal').onchange=e=>{cfg.reveal=e.target.value; newGame();};
@@ -708,7 +709,7 @@ $('flipBtn').onclick=()=>{flip=!flip; render(true);};
 /* ---------- boot ---------- */
 function start(data){
   if(data&&data.G){G=data.G; if(!G.pos){G.pos=[];} Object.assign(cfg,data.cfg||{}); flip=!!data.flip;
-    $('mode').value=cfg.mode; $('reveal').value=cfg.reveal||'auto'; $('side').value=cfg.side; $('level').value=cfg.level; $('side').disabled=$('level').disabled=cfg.mode!=='ai';
+    cfg.mode='ai'; $('reveal').value=cfg.reveal||'auto'; $('side').value=cfg.side; $('level').value=cfg.level; $('side').disabled=$('level').disabled=cfg.mode!=='ai';
     uid=1+Math.max(0,...G.B.filter(Boolean).map(p=>p.id)); if(!G.pos.length)G.pos.push(posEntry()); drawGrid(); render(true); maybeAI();}
   else newGame();
 }
