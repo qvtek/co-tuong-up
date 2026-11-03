@@ -29,7 +29,8 @@
   --accent:#e0695c; --wood:#c9a466; --wood2:#b08a4c; --grid:#3a250f;
   --face:#efe5cc; --red:#a3221a; --blk:#171d1a; --jade:#24594a; --jade2:#3c7a66;
   --sel:#e2ad3b; --ok:#47b38c; color-scheme:dark}
-html,body{background:var(--bg)}
+html,body{background:var(--bg);-webkit-tap-highlight-color:transparent}
+button,select,svg,a{-webkit-tap-highlight-color:transparent}
 body{color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.5}
 .app{max-width:960px;margin:0 auto;padding-block:20px 32px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .top{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}
@@ -47,7 +48,7 @@ body{color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.5}
 .pickBtn{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;border-radius:999px}
 .pickBtn .chip{width:34px;height:34px;font-size:18px}
 .pickBtn small{color:var(--muted);font-weight:500}
-svg#board{width:100%;height:auto;display:block;touch-action:manipulation;cursor:pointer;user-select:none;-webkit-user-select:none}
+svg#board{width:100%;height:auto;display:block;touch-action:manipulation;-webkit-touch-callout:none;outline:none;cursor:pointer;user-select:none;-webkit-user-select:none}
 .panel{display:flex;flex-direction:column;gap:16px;min-width:0}
 .status{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:4px}
 .status .main{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px}
@@ -90,7 +91,7 @@ details ul{padding-left:18px;margin:8px 0 0;display:grid;gap:4px;max-width:60ch}
 .gl{stroke:var(--grid);stroke-width:1.4} .frame{fill:none;stroke:var(--grid);stroke-width:3}
 .mk{stroke:var(--grid);stroke-width:1.4;fill:none}
 .river{font-family:var(--f-han);font-weight:900;font-size:28px;fill:var(--grid);opacity:.72}
-.pc{transition:transform .3s cubic-bezier(.3,.7,.3,1);pointer-events:none}
+.pc{transition:transform .3s cubic-bezier(.3,.7,.3,1);pointer-events:none;will-change:transform}
 .shadow{fill:#000;opacity:.22}
 .back{fill:var(--jade);stroke:#14352b;stroke-width:1.5}
 .backring{fill:none;stroke:var(--jade2);stroke-width:2}
