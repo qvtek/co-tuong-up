@@ -153,7 +153,8 @@ details ul{padding-left:18px;margin:8px 0 0;display:grid;gap:4px;max-width:60ch}
       <div class="controls">
         <div class="field"><label for="side">Bạn cầm</label><select id="side"><option value="r">Đỏ (đi trước)</option><option value="b">Đen</option></select></div>
         <div class="field"><label for="level">Độ khó</label><select id="level"><option value="1">Dễ</option><option value="2">Vừa</option><option value="3" selected>Khó</option><option value="4">Cao thủ</option></select></div>
-        <div class="field" style="grid-column:1/-1"><label for="reveal">Lật quân</label><select id="reveal"><option value="auto">Tự động (ngẫu nhiên)</option><option value="choose">Tự chọn quân</option></select></div>
+        <div class="field"><label for="reveal">Lật quân</label><select id="reveal"><option value="auto">Tự động (ngẫu nhiên)</option><option value="choose">Tự chọn quân</option></select></div>
+        <div class="field"><label for="sound">Âm thanh</label><select id="sound"><option value="voice">Bật, có giọng đọc</option><option value="fx">Chỉ tiếng quân</option><option value="off">Tắt</option></select></div>
         <div class="btns"><button class="primary" id="newBtn">Ván mới</button><button id="undoBtn">Đi lại</button><button id="flipBtn">Xoay bàn</button></div>
       </div>
       <div>
@@ -175,6 +176,7 @@ details ul{padding-left:18px;margin:8px 0 0;display:grid;gap:4px;max-width:60ch}
           <li>Chế độ Tự chọn quân: đi quân úp thì được chọn nó lật thành quân gì trong số quân mình còn úp. Quân bị ăn khi còn úp thì lật ngẫu nhiên.</li>
           <li>Không được để Tướng bị chiếu, hai Tướng không được đối mặt. Hết nước đi là thua.</li>
           <li>Cấm chiếu mãi: bên nào chiếu liên tục làm thế cờ lặp lại 3 lần thì bị xử thua. Lặp lại 3 lần mà không ai chiếu mãi thì hoà.</li>
+          <li>Âm thanh: trên iPhone, gạt nút im lặng bên hông máy sẽ tắt luôn tiếng trong game.</li>
           <li>Máy không nhìn trộm quân úp: nó chỉ ước lượng theo số quân chưa lộ.</li>
         </ul>
       </details>
@@ -470,6 +472,70 @@ function think(col,depth){
   return best;
 }
 
+/* ---------- sound: synthesized wood clacks, check alarm, voice ---------- */
+const SND={ctx:null,master:null,mode:'voice',noise:null,voice:null,voiceText:''};
+try{const v=localStorage.getItem('ctu-sound'); if(v==='voice'||v==='fx'||v==='off')SND.mode=v;}catch(e){}
+function actx(){
+  if(SND.mode==='off')return null;
+  if(!SND.ctx){const C=window.AudioContext||window.webkitAudioContext; if(!C)return null;
+    try{SND.ctx=new C(); const comp=SND.ctx.createDynamicsCompressor(); const g=SND.ctx.createGain(); g.gain.value=0.8; g.connect(comp); comp.connect(SND.ctx.destination); SND.master=g;}catch(e){SND.ctx=null; return null;}}
+  if(SND.ctx.state==='suspended')SND.ctx.resume().catch(()=>{});
+  return SND.ctx;
+}
+function noiseSrc(ctx){
+  if(!SND.noise){const b=ctx.createBuffer(1,Math.floor(ctx.sampleRate*0.3),ctx.sampleRate),d=b.getChannelData(0); for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1; SND.noise=b;}
+  const s=ctx.createBufferSource(); s.buffer=SND.noise; return s;
+}
+function clack(t0,o){
+  const ctx=SND.ctx, {freq=1800,q=4,gain=0.9,dur=0.08,body=190,bodyGain=0.7}=o||{};
+  const n=noiseSrc(ctx), bp=ctx.createBiquadFilter(), g=ctx.createGain();
+  bp.type='bandpass'; bp.frequency.value=freq; bp.Q.value=q;
+  g.gain.setValueAtTime(0.0001,t0); g.gain.linearRampToValueAtTime(gain,t0+0.002); g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+  n.connect(bp); bp.connect(g); g.connect(SND.master); n.start(t0); n.stop(t0+dur+0.02);
+  const os=ctx.createOscillator(), og=ctx.createGain(); os.type='sine';
+  os.frequency.setValueAtTime(body*1.7,t0); os.frequency.exponentialRampToValueAtTime(body,t0+0.03);
+  og.gain.setValueAtTime(0.0001,t0); og.gain.linearRampToValueAtTime(bodyGain,t0+0.003); og.gain.exponentialRampToValueAtTime(0.0001,t0+dur*1.7);
+  os.connect(og); og.connect(SND.master); os.start(t0); os.stop(t0+dur*2);
+  const o2=ctx.createOscillator(), g2=ctx.createGain(); o2.type='triangle'; o2.frequency.value=freq*0.55;
+  g2.gain.setValueAtTime(gain*0.25,t0); g2.gain.exponentialRampToValueAtTime(0.0001,t0+0.045);
+  o2.connect(g2); g2.connect(SND.master); o2.start(t0); o2.stop(t0+0.07);
+}
+function bell(t0,f,dur,gain){
+  const ctx=SND.ctx;
+  [[1,1],[2.76,0.45],[5.4,0.2]].forEach(([m,a])=>{const o=ctx.createOscillator(),g=ctx.createGain(); o.type='sine'; o.frequency.value=f*m;
+    g.gain.setValueAtTime(0.0001,t0); g.gain.linearRampToValueAtTime(gain*a,t0+0.004); g.gain.exponentialRampToValueAtTime(0.0001,t0+dur/m*1.5);
+    o.connect(g); g.connect(SND.master); o.start(t0); o.stop(t0+dur*1.6);});
+}
+function tune(t0,notes,step){const ctx=SND.ctx; notes.forEach((f,i)=>{const t=t0+i*step,o=ctx.createOscillator(),g=ctx.createGain(); o.type='triangle'; o.frequency.value=f;
+  g.gain.setValueAtTime(0.0001,t); g.gain.linearRampToValueAtTime(0.35,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+step*1.8);
+  o.connect(g); g.connect(SND.master); o.start(t); o.stop(t+step*2);});}
+function pickVoice(){
+  try{const vs=speechSynthesis.getVoices(); const vi=vs.find(v=>/^vi/i.test(v.lang)), zh=vs.find(v=>/^zh/i.test(v.lang));
+    if(vi){SND.voice=vi; SND.voiceText='Chiếu tướng!';} else if(zh){SND.voice=zh; SND.voiceText='将军!';} else {SND.voice=null; SND.voiceText='';}}catch(e){}
+}
+try{if(window.speechSynthesis){pickVoice(); speechSynthesis.onvoiceschanged=pickVoice;}}catch(e){}
+function say(text,delay){
+  if(SND.mode!=='voice'||!SND.voice||!text)return;
+  setTimeout(()=>{try{speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text); u.voice=SND.voice; u.lang=SND.voice.lang; u.rate=1.05; u.pitch=0.9; u.volume=1; speechSynthesis.speak(u);}catch(e){}},delay*1000);
+}
+function sfx(kind,info){
+  const ctx=actx(); if(!ctx)return;
+  const now=ctx.currentTime+0.01, land=now+0.24;
+  try{
+    if(kind==='select'){clack(now,{freq:2700,gain:0.35,dur:0.035,body:430,bodyGain:0.15});return;}
+    if(kind!=='move')return;
+    if(info.cap){clack(land,{freq:1250,q:3,gain:1,dur:0.13,body:135,bodyGain:0.95}); clack(land+0.05,{freq:2300,gain:0.45,dur:0.06,body:270,bodyGain:0.25});}
+    else clack(land,{freq:1800,gain:0.9,dur:0.08,body:190,bodyGain:0.7});
+    if(info.rev)clack(land+0.17,{freq:3300,gain:0.22,dur:0.03,body:600,bodyGain:0.08});
+    if(info.over){const w=info.over.winner, t=land+0.35;
+      if(!w)tune(t,[523,523,392],0.16); else if(w===cfg.side)tune(t,[523,659,784,1047],0.13); else tune(t,[440,392,330,262],0.17);}
+    else if(info.chk){bell(land+0.08,1180,0.5,0.35); bell(land+0.2,1180,0.4,0.25); say(SND.voiceText,0.3);}
+  }catch(e){}
+}
+const unlockAudio=()=>{actx();};
+document.addEventListener('pointerdown',unlockAudio,{passive:true});
+document.addEventListener('touchend',unlockAudio,{passive:true});
+
 /* ---------- game state ---------- */
 let G, sel=-1, selMoves=[], thinking=false, flip=false, label='han';
 const cfg={mode:'ai',side:'r',level:3,reveal:'auto'};
@@ -531,7 +597,9 @@ function play(m,ty){
       else if(!moverAll&&!otherAll) G.warn='Thế cờ đã lặp lại. Lặp thêm lần nữa sẽ bị xử hoà.';
     }
   }
-  sel=-1; selMoves=[]; render(); maybeAI();
+  sel=-1; selMoves=[]; render();
+  sfx('move',{cap:!!q,rev:!!entry.rev,chk:pe.chk&&!G.over,over:G.over});
+  maybeAI();
 }
 const TI={k:1,a:2,e:3,h:4,r:5,c:6,p:7}, BVAL=[0,0,22,24,40,90,45,10];
 const LEVELS={1:{time:600,maxDepth:2,noise:40},2:{time:1200,maxDepth:4,noise:10},3:{time:3000,maxDepth:60,noise:0},4:{time:8000,maxDepth:60,noise:0}};
@@ -692,7 +760,7 @@ function onSquare(r,c){
   if(sel>=0){const m=selMoves.find(m=>(m&127)===i); if(m!=null){
     if(cfg.reveal==='choose'&&G.B[sel].hid){openPicker(m);return;}
     play(m);return;}}
-  if(p&&p.c===G.turn&&i!==sel){sel=i; selMoves=legal(G.B.slice(),G.turn).filter(m=>(m>>7)===i);} else {sel=-1; selMoves=[];}
+  if(p&&p.c===G.turn&&i!==sel){sfx('select'); sel=i; selMoves=legal(G.B.slice(),G.turn).filter(m=>(m>>7)===i);} else {sel=-1; selMoves=[];}
   renderMarks();
 }
 const $=id=>document.getElementById(id);
@@ -704,6 +772,8 @@ $('overView').onclick=()=>{overHidden=true; renderStatus();};
 $('pickCancel').onclick=()=>{closePicker(); sel=-1; selMoves=[]; renderMarks();};
 $('newBtn').onclick=newGame;
 $('undoBtn').onclick=undo;
+$('sound').value=SND.mode;
+$('sound').onchange=e=>{SND.mode=e.target.value; try{localStorage.setItem('ctu-sound',SND.mode);}catch(_){} if(SND.mode==='off'){try{speechSynthesis.cancel();}catch(_){}} else sfx('move',{cap:false,rev:false,chk:SND.mode==='voice',over:null});};
 $('flipBtn').onclick=()=>{flip=!flip; render(true);};
 
 /* ---------- boot ---------- */
